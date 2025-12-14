@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Test Image Scanner</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 800px;
+      margin: 40px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    h1 {
+      margin-top: 0;
+      color: #333;
+    }
+    .section {
+      margin: 20px 0;
+      padding: 20px;
+      background: #f9f9f9;
+      border-radius: 8px;
+    }
+    button {
+      background: #DC2626;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 16px;
+      margin: 5px;
+    }
+    button:hover {
+      background: #b91c1c;
+    }
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    input[type="file"] {
+      margin: 10px 0;
+    }
+    .result {
+      margin-top: 20px;
+      padding: 15px;
+      background: #e8f5e9;
+      border-radius: 8px;
+      border-left: 4px solid #4caf50;
+    }
+    .error {
+      background: #ffebee;
+      border-left-color: #f44336;
+    }
+    .loading {
+      color: #666;
+      font-style: italic;
+    }
+    .image-list {
+      list-style: none;
+      padding: 0;
+    }
+    .image-list li {
+      padding: 8px;
+      margin: 5px 0;
+      background: white;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .image-list li:hover {
+      background: #f0f0f0;
+    }
+    pre {
+      background: #f5f5f5;
+      padding: 15px;
+      border-radius: 4px;
+      overflow-x: auto;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🧪 Test Image Scanner</h1>
+    <p>Test the AI food recognition with your images</p>
+
+    <div class="section">
+      <h2>1. Test Local Images</h2>
+      <button onclick="listLocalImages()">List Available Images</button>
+      <ul id="imageList" class="image-list"></ul>
+    </div>
+
+    <div class="section">
+      <h2>2. Upload Custom Image</h2>
+      <input type="file" id="fileInput" accept="image/*" />
+      <button onclick="testUploadedImage()">Test Uploaded Image</button>
+    </div>
+
+    <div id="result"></div>
+  </div>
+
+  <script>
+    const API_URL = 'http://localhost:8787'
+
+    async function listLocalImages() {
+      const resultDiv = document.getElementById('result')
+      resultDiv.innerHTML = '<div class="loading">Loading images...</div>'
+      
+      try {
+        const res = await fetch(`${API_URL}/api/test-images`)
+        const data = await res.json()
+        const images = data.images || []
+        
+        const listEl = document.getElementById('imageList')
+        listEl.innerHTML = ''
+        
+        if (images.length === 0) {
+          listEl.innerHTML = '<li>No images found in images/ folder</li>'
+          return
+        }
+        
+        images.forEach(img => {
+          const li = document.createElement('li')
+          li.textContent = img
+          li.onclick = () => testLocalImage(img)
+          listEl.appendChild(li)
+        })
+        
+        resultDiv.innerHTML = `<div class="result">Found ${images.length} image(s). Click on an image to test it.</div>`
+      } catch (err) {
+        resultDiv.innerHTML = `<div class="result error">Error: ${err.message}<br>Make sure the API server is running (npm run dev:api)</div>`
+      }
+    }
+
+    async function testLocalImage(imageName) {
+      const resultDiv = document.getElementById('result')
+      resultDiv.innerHTML = `<div class="loading">🔍 Testing ${imageName}...</div>`
+      
+      try {
+        const res = await fetch(`${API_URL}/api/test-scan`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ imageName, tier: 'premium', kind: 'meal' }),
+        })
+
+        if (!res.ok) {
+          const error = await res.json().catch(() => ({}))
+          throw new Error(error.message || `HTTP ${res.status}`)
+        }
+
+        const result = await res.json()
+        displayResult(result, imageName)
+      } catch (err) {
+        resultDiv.innerHTML = `<div class="result error">❌ Error: ${err.message}</div>`
+      }
+    }
+
+    async function testUploadedImage() {
+      const fileInput = document.getElementById('fileInput')
+      const file = fileInput.files?.[0]
+      
+      if (!file) {
+        alert('Please select an image file')
+        return
+      }
+
+      const resultDiv = document.getElementById('result')
+      resultDiv.innerHTML = '<div class="loading">🔍 Analyzing image...</div>'
+
+      try {
+        // Convert file to base64
+        const base64 = await new Promise((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(reader.result)
+          reader.onerror = reject
+          reader.readAsDataURL(file)
+        })
+
+        const res = await fetch(`${API_URL}/api/scan`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            tier: 'premium', 
+            kind: 'meal', 
+            imageBase64: base64 
+          }),
+        })
+
+        if (!res.ok) {
+          const error = await res.json().catch(() => ({}))
+          throw new Error(error.message || `HTTP ${res.status}`)
+        }
+
+        const result = await res.json()
+        displayResult(result, file.name)
+      } catch (err) {
+        resultDiv.innerHTML = `<div class="result error">❌ Error: ${err.message}</div>`
+      }
+    }
+
+    function displayResult(result, imageName) {
+      const resultDiv = document.getElementById('result')
+      const html = `
+        <div class="result">
+          <h3>✅ Results for: ${imageName}</h3>
+          <p><strong>Name:</strong> ${result.name}</p>
+          <p><strong>Calories:</strong> ${result.macros.calories} kcal</p>
+          <p><strong>Protein:</strong> ${result.macros.proteinG}g</p>
+          <p><strong>Carbs:</strong> ${result.macros.carbsG}g</p>
+          <p><strong>Fat:</strong> ${result.macros.fatG}g</p>
+          ${result.micros ? `
+            <h4>Micros:</h4>
+            <ul>
+              <li>Sugar: ${result.micros.sugarG}g</li>
+              <li>Sodium: ${result.micros.sodiumMg}mg</li>
+              <li>Fiber: ${result.micros.fiberG}g</li>
+              <li>Saturated Fat: ${result.micros.saturatedFatG}g</li>
+            </ul>
+          ` : ''}
+          ${result.notes && result.notes.length > 0 ? `
+            <h4>Notes:</h4>
+            <ul>
+              ${result.notes.map(note => `<li>${note}</li>`).join('')}
+            </ul>
+          ` : ''}
+          <details>
+            <summary>Raw JSON</summary>
+            <pre>${JSON.stringify(result, null, 2)}</pre>
+          </details>
+        </div>
+      `
+      resultDiv.innerHTML = html
+    }
+
+    // Auto-list images on load
+    window.addEventListener('load', () => {
+      listLocalImages()
+    })
+  </script>
+</body>
+</html>
